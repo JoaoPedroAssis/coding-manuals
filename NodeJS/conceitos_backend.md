@@ -166,6 +166,30 @@ export default class Appointment {
   "emitDecoratorMetadata": true
 }
 ```
+É sempre massa ter colunas pra gravar quando o asset foi criado e quando o asset foi atualizado. Pra fazer isso, basta adicionar os seguintes campos na model:
+
+```ts
+@CreateDateColumn()
+created_at: Date;
+
+@UpdateDateColumn()
+updated_at: Date;
+```
+
+E na migração:
+
+```ts
+{
+  name: 'created_at',
+  type: 'timestamp',
+  default: 'now()',
+},
+{
+  name: 'updated_at',
+  type: 'timestamp',
+  default: 'now()',
+},
+```
 
 ### Criando as Models com os repositórios e services
 
