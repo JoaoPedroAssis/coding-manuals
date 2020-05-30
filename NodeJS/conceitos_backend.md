@@ -215,3 +215,56 @@ await appointmentsRepository.save(appointment);
 
 return appointment;
 ```
+
+### Relacionamentos entre as Models
+
+#### OneToMany ou ManyToOne
+A relação 1-N pode ser chamada de OneToMany ou ManyToOne dependendo do referencial. Mas basicamente ela trata o caso de uma coluna de uma tabela fazer referência a outra tabela. Isso é feito pelo uso de chaves estrangeiras (FKs)
+
+No TypeOrm, a seguinte migração deve ser feita no método `up`:
+
+```ts
+await queryRunner.createForeignKey(
+      'appointments',
+      new TableForeignKey({
+        name: 'appointment_provider',
+        columnNames: ['provider_id'],
+        referencedColumnNames: ['id'],
+        referencedTableName: 'users',
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE',
+      }),
+    );
+```
+Onde
+
+- 'appointments' é a tabela de origem que vai referenciar outra tabela
+- **name** é o apelido da FK
+- **columnNames** é o nome do campo na tabela de origem
+- **referencedColumnNames** é o nome do campo na tabela de destino
+- **referencedTableName** é o nome da tabela de destino
+- **onDelete** diz o que fazer com as referências quando o campo de origem for deletado
+- **onUpdate** diz o que fazer com as referências quando o campo de origem for atualizado
+
+No método `down`:
+
+```ts
+    await queryRunner.dropForeignKey('appointments', 'appointment_provider');
+```
+
+Tenha em mente que
+- os tipos no banco devem ser iguais
+- a tabela de destino já deve estar criada
+
+Já nas models, é necessário adicionar o seguinte:
+
+```ts
+@Column()
+provider_id: string;
+
+@ManyToOne(() => User)
+@JoinColumn({ name: 'provider_id' })
+provider: User;
+```
+
+Isso faz com que a classe tenha acesso à referência. É possível utilizar o ManyToOne ou o OneToMany, sempre dependendo da referência de onde se olha.
