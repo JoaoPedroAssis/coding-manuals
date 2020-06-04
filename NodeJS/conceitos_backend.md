@@ -11,6 +11,18 @@ Os repositórios são a interface de manipulação da persistência das models n
 ### Services
 Um service é uma ação na aplicação. Cada service é uma classe e deve conter apenas uma função `public execute()` ou `public run()`. Esse serviço deve conter a regra de negócio da aplicação
 
+### Rotas
+No express cada rota é um parametro para uma certa função. Dentro de uma pasta `routes`, crie um objeto router para usar como sufixo de todas as rotas que fazem sentido juntas. Em outro arquivo chamado `<nome>.routes.ts` coloque todas as rotas adequadas e exporte o router. Dentro de um arquivo index, faça o seguinte:
+
+```ts
+import { Router } from 'express';
+import appointmentsRouter from './appointments.routes';
+
+const routes = Router();
+
+routes.use('/appointments', appointmentsRouter);
+```
+
 ## Configuração de BD com TypeOrm
 
 Uma maneira massa de ter um bd rodando sem ficar poluindo seu pc com um monte de coisa é usar o docker. Tendo o docker instalado rode:
@@ -268,3 +280,104 @@ provider: User;
 ```
 
 Isso faz com que a classe tenha acesso à referência. É possível utilizar o ManyToOne ou o OneToMany, sempre dependendo da referência de onde se olha.
+
+## Autenticação
+
+### Cadastro de usuários
+A primeira coisa a se pensar na autenticação é como salvar os dados de um usuário de maneira segura. Para isso, iremos criptografar a senha do usuário. Para isso usaremos o módulo `bcryptjs`, lembrando de instalar também os seu arquivo de tipos como dependência de desenvolvimento
+
+`yarn add bcryptjs` e `yarn add @types/bcryptjs -D`
+
+após isso, no método de salvar o usuário na base de dados:
+
+```ts
+import { hash } from 'bcryptjs';
+const hashedPassword = await hash(password, 8);
+
+const user = userRepository.create({
+  name,
+  email,
+  password: hashedPassword,
+});
+```
+
+### Validando credenciais
+
+#### Comparando senhas
+Para validar as credenciais de um usuário, basta usar o método `compare` do módulo bcryptjs
+
+```ts
+const passwordMatched: bool = await compare(password, user.password);
+```
+
+Importante mencionar para sempre retornar mensagens de erro genéricas na autenticação, para evitar que o usuário saiba qual parte ele errou. Dessa maneira, podemos evitar potenciais invasores.
+
+#### Gerando JWTs
+Uma das maneiras de autenticar usuários em apis REST é usando JWTs. Usando o módulo `jsonwebtoken` e sua declaração de tipos, podemos assinar um payload (**Jamais vazar a chave secreta**) e devolver na nossa resposta
+
+### Autenticando rotas
+Algumas rotas da aplicação vão precisar de autenticação. Faremos isso por meio de um middleware do express. O token será passado num Auth Header do tipo bearer e precisará estar válido em todas as requisições
+
+Dentro de uma pasta `src/middlewares`, iremos criar o nosso middleware de autenticação. Ele irá receber o token e performar as devidas validações
+
+```ts
+import { Request, Response, NextFunction } from 'express';
+import { verify } from 'jsonwebtoken';
+
+export default function ensureAuthenticated(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    throw new Error('JWT token is missing');
+  }
+
+  const token = authHeader.split(' ')[1];
+  const { secret } = authConfig.jwt;
+
+  try {
+    const decoded = verify(token, secret);
+
+    const { sub } = decoded as TokenPayload;
+
+    req.user = {
+      id: sub,
+    };
+
+    return next();
+  } catch {
+    throw new Error('Invalid JWT token');
+  }
+}
+```
+
+Repare que a variável decoded está sendo forçada a ter o tipo `TokenPayload`. Isso se dá pelo fato de o payload de um jwt ser variável. Então, para contornar isso, declaramos uma interface com todas as propriedades que precisamos e utilizamos como no código acima
+
+Outro detalhe é que estamos colocando o `sub` dentro da propriedade `id` de um objeto user. Originalmente, o req do express não possui essa propriedade, então devemos usar uma manha do typescript para permitir isso.
+
+Dentro de uma pasta `src/@types`, devemos criar um arquivo `express.d.ts` e preencher da seguinte forma:
+
+```ts
+declare namespace Express {
+  export interface Request {
+    user: {
+      id: string;
+    };
+  }
+}
+```
+
+Isso vai **adicionar** a propriedade user à interface Request. Isso é interessante pelo fato de podermos tornar a informação que foi calculada no middlware disponível na rota subsequente
+
+Para usarmos esse middleware em alguma rota fazemos:
+
+```ts
+import ensureAuthenticated from '../middlewares/ensureAuthenticated';
+
+const appointmentsRouter = Router();
+
+appointmentsRouter.use(ensureAuthenticated);
+```
